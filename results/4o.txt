@@ -1,0 +1,31 @@
+--- Micro-Averaged Entity-Level F1 Results ---
+Evaluated fields: supplierName, receiptDate, supplierAddress, totalAmount
+Total Documents Processed: 347
+Precision: 0.9510
+Recall:    0.9510
+F1 Score:  0.9510
+True Positives (TP): 1320
+False Positives (FP): 68
+False Negatives (FN): 68
+
+--- Per-Field F1 Scores ---
+Field: supplierName
+  Precision: 0.9308
+  Recall:    0.9308
+  F1 Score:  0.9308
+  TP: 323  FP: 24  FN: 24
+Field: receiptDate
+  Precision: 0.9597
+  Recall:    0.9597
+  F1 Score:  0.9597
+  TP: 333  FP: 14  FN: 14
+Field: supplierAddress
+  Precision: 0.9568
+  Recall:    0.9568
+  F1 Score:  0.9568
+  TP: 332  FP: 15  FN: 15
+Field: totalAmount
+  Precision: 0.9568
+  Recall:    0.9568
+  F1 Score:  0.9568
+  TP: 332  FP: 15  FN: 15
