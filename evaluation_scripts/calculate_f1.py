@@ -9,13 +9,19 @@ from datetime import datetime
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
+# --- LangChain Output Parsers ---
+from langchain.output_parsers import PydanticOutputParser
+
+# --- Pydantic for schema enforcement ---
+from pydantic import BaseModel, Field
+
 # --- Load environment variables from .env file ---
 load_dotenv()
 
 # --- Configuration ---
 DATASET_PATH = os.path.join(os.path.dirname(__file__), "..", "SROIE2019", "test")
 MODEL_NAME = "gpt-4o"
-FIELDS_TO_EVALUATE = ['company', 'date', 'address', 'total']
+FIELDS_TO_EVALUATE = ['supplierName', 'receiptDate', 'supplierAddress', 'totalAmount']
 
 # --- Helper: Image to base64 ---
 def path_2_b64(image_path):
@@ -48,27 +54,30 @@ def call_vlm_with_langchain(image_path, prompt, api_key):
         openai_api_key=api_key,
         max_tokens=1000,
         temperature=0,
-        response_format={"type": "json_object"},
+        model_kwargs={"response_format": {"type": "json_object"}},
     )
-    response = llm.invoke(messages)
-    # LangChain returns an AIMessage with .content as a JSON string
-    return response.content
+    llm_with_parser = llm.with_structured_output(SROIEEntity)
+    response = llm_with_parser.invoke(messages)
+    # The response is now a parsed SROIEEntity object
+    return response
 
-def get_parsed_output(pred_json_str):
-    if pred_json_str is None:
-        return None
-    try:
-        return json.loads(pred_json_str)
-    except Exception as e:
-        print(f"Error decoding JSON from model output: {e}\nRaw output: {pred_json_str}")
-        return None
+# --- Pydantic Model for SROIE Entity Extraction ---
 
-# --- Normalization function (same as before) ---
+class SROIEEntity(BaseModel):
+    supplierName: str = Field(description="The supplier name on the receipt")
+    receiptDate: str = Field(description="The date on the receipt in DD/MM/YYYY format")
+    supplierAddress: str = Field(description="The supplier address on the receipt")
+    totalAmount: str = Field(description="The total amount to pay, as a string")
+
+# --- Output Parsers ---
+pydantic_parser = PydanticOutputParser(pydantic_object=SROIEEntity)
+
+# --- Normalization function ---
 def normalize_value(key, value):
     if value is None:
         return None
     value = str(value).strip()
-    if key == "date":
+    if key == "receiptDate":
         import re
         formats = [
             "%Y-%m-%d", "%d-%m-%Y", "%d-%m-%y", "%y-%m-%d",
@@ -104,13 +113,13 @@ def normalize_value(key, value):
             yyyy, mm, dd = parts
             return f"{dd.zfill(2)}/{mm.zfill(2)}/{yyyy}"
         return val
-    elif key == "total":
+    elif key == "totalAmount":
         value = value.replace('$', '').replace('€', '').replace('£', '').replace(',', '').replace('RM', '').strip()
         try:
             return f"{float(value):.2f}"
         except ValueError:
             return value.lower()
-    if key in ["address", "company"]:
+    if key in ["supplierAddress", "supplierName"]:
         import string
         value = value.translate(str.maketrans('', '', string.punctuation))
         value = ''.join(value.split())
@@ -142,20 +151,25 @@ def evaluate_sroie_dataset_langchain(dataset_path, api_key, fields_to_evaluate):
             continue
         prompt = (
             "You are an expert at extracting information from scanned receipts. "
-            "Extract the 'company', 'date' (format YYYY-MM-DD), 'address', and 'total' from this receipt. "
-            "If a field is not present, omit it. Output the information as a JSON object."
+            "If a field is not present, omit it. Output only these fields as a flat JSON object."
         )
         try:
-            model_raw_output = call_vlm_with_langchain(image_path, prompt, api_key)
-            prediction = get_parsed_output(model_raw_output)
+            prediction = call_vlm_with_langchain(image_path, prompt, api_key)
         except Exception as e:
             print(f"LangChain model call failed for {receipt_id}: {e}")
             prediction = None
         if prediction is None:
             print(f"Could not get valid prediction for {receipt_id}. Skipping.")
             continue
-        normalized_gt = {k: normalize_value(k, v) for k, v in ground_truth.items() if k in fields_to_evaluate}
-        normalized_pred = {k: normalize_value(k, v) for k, v in prediction.items() if k in fields_to_evaluate}
+        # Map ground truth keys to new model keys
+        gt_key_map = {
+            'company': 'supplierName',
+            'date': 'receiptDate',
+            'address': 'supplierAddress',
+            'total': 'totalAmount',
+        }
+        normalized_gt = {gt_key_map[k]: normalize_value(gt_key_map[k], v) for k, v in ground_truth.items() if k in gt_key_map}
+        normalized_pred = {k: normalize_value(k, v) for k, v in prediction.model_dump().items() if k in fields_to_evaluate}
         all_ground_truths.append(normalized_gt)
         all_predictions.append(normalized_pred)
     return all_ground_truths, all_predictions
@@ -168,11 +182,12 @@ def calculate_f1_score(ground_truths, predictions, fields_to_evaluate):
     import difflib
     # Per-field stats
     field_stats = {field: {"tp": 0, "fp": 0, "fn": 0} for field in fields_to_evaluate}
-    for gt_doc, pred_doc in zip(ground_truths, predictions):
+    for idx, (gt_doc, pred_doc) in enumerate(zip(ground_truths, predictions)):
         for field in fields_to_evaluate:
             gt_value = gt_doc.get(field)
             pred_value = pred_doc.get(field)
-            if field in ["address", "company"] and gt_value is not None and pred_value is not None:
+            # Fuzzy match for supplierAddress/supplierName
+            if field in ["supplierAddress", "supplierName"] and gt_value is not None and pred_value is not None:
                 ratio = difflib.SequenceMatcher(None, gt_value, pred_value).ratio()
                 if ratio >= 0.90:
                     total_tp += 1
@@ -182,6 +197,10 @@ def calculate_f1_score(ground_truths, predictions, fields_to_evaluate):
                     total_fn += 1
                     field_stats[field]["fp"] += 1
                     field_stats[field]["fn"] += 1
+                    print(f"[Doc {idx+1}] Field '{field}' NOT true positive (fuzzy ratio {ratio:.2f} < 0.90):")
+                    print(f"  Ground Truth: {repr(gt_value)}")
+                    print(f"  Prediction:   {repr(pred_value)}")
+            # Exact match for other fields
             elif gt_value is not None and pred_value is not None:
                 if gt_value == pred_value:
                     total_tp += 1
@@ -191,12 +210,23 @@ def calculate_f1_score(ground_truths, predictions, fields_to_evaluate):
                     total_fn += 1
                     field_stats[field]["fp"] += 1
                     field_stats[field]["fn"] += 1
+                    print(f"[Doc {idx+1}] Field '{field}' NOT true positive (exact mismatch):")
+                    print(f"  Ground Truth: {repr(gt_value)}")
+                    print(f"  Prediction:   {repr(pred_value)}")
+            # Prediction missing
             elif gt_value is not None and pred_value is None:
                 total_fn += 1
                 field_stats[field]["fn"] += 1
+                print(f"[Doc {idx+1}] Field '{field}' NOT true positive (prediction missing):")
+                print(f"  Ground Truth: {repr(gt_value)}")
+                print(f"  Prediction:   None")
+            # Ground truth missing
             elif gt_value is None and pred_value is not None:
                 total_fp += 1
                 field_stats[field]["fp"] += 1
+                print(f"[Doc {idx+1}] Field '{field}' NOT true positive (ground truth missing):")
+                print(f"  Ground Truth: None")
+                print(f"  Prediction:   {repr(pred_value)}")
     precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else 0
     recall = total_tp / (total_tp + total_fn) if (total_tp + total_fn) > 0 else 0
     f1 = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
