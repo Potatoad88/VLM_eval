@@ -7,6 +7,8 @@ from datetime import datetime
 
 # --- LangChain Imports ---
 from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_vertexai import ChatVertexAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
 # --- LangChain Output Parsers ---
@@ -20,8 +22,12 @@ load_dotenv()
 
 # --- Configuration ---
 DATASET_PATH = os.path.join(os.path.dirname(__file__), "..", "SROIE2019", "test")
-MODEL_NAME = "gpt-4o"
+MODEL_NAME = "gemini-2.0-flash"
 FIELDS_TO_EVALUATE = ['supplierName', 'receiptDate', 'supplierAddress', 'totalAmount']
+# --- Vertex AI Configuration ---
+VERTEX_PROJECT = 'bionic-cosmos-419708'
+VERTEX_LOCATION = 'us-west1'
+VERTEX_MODEL = 'gemini-2.5-flash'
 
 # --- Helper: Image to base64 ---
 def path_2_b64(image_path):
@@ -49,13 +55,31 @@ def call_vlm_with_langchain(image_path, prompt, api_key):
             ]
         )
     ]
-    llm = ChatOpenAI(
-        model=MODEL_NAME,
-        openai_api_key=api_key,
-        max_tokens=1000,
+    # llm = ChatOpenAI(
+    #     model=MODEL_NAME,
+    #     openai_api_key=api_key,
+    #     max_tokens=1000,
+    #     temperature=0,
+    #     model_kwargs={"response_format": {"type": "json_object"}},
+    # )
+
+    # llm = ChatGoogleGenerativeAI(
+    #     model=MODEL_NAME,
+    #     google_api_key=api_key,
+    #     max_output_tokens=1000,
+    #     temperature=0,
+    # )
+
+    llm = ChatVertexAI(
+        model=VERTEX_MODEL,
+        project=VERTEX_PROJECT,
+        location=VERTEX_LOCATION,
+        max_output_tokens=1000,
         temperature=0,
-        model_kwargs={"response_format": {"type": "json_object"}},
     )
+
+    llm_with_parser = llm.with_structured_output(SROIEEntity)
+    response = llm_with_parser.invoke(messages)
     llm_with_parser = llm.with_structured_output(SROIEEntity)
     response = llm_with_parser.invoke(messages)
     # The response is now a parsed SROIEEntity object
@@ -259,11 +283,14 @@ def calculate_f1_score(ground_truths, predictions, fields_to_evaluate):
 
 # --- Main Execution ---
 if __name__ == "__main__":
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    if not openai_api_key:
-        raise ValueError("OPENAI_API_KEY not found in environment variables. Please set it in a .env file or directly.")
+    # openai_api_key = os.getenv("OPENAI_API_KEY")
+    # if not openai_api_key:
+    #     raise ValueError("OPENAI_API_KEY not found in environment variables. Please set it in a .env file or directly.")
+    google_api_key = os.getenv("GOOGLE_API_KEY")
+    if not google_api_key:
+        raise ValueError("GOOGLE_API_KEY not found in environment variables. Please set it in a .env file or directly.")
     print(f"Starting evaluation on dataset: {DATASET_PATH} using model: {MODEL_NAME} (via LangChain)")
-    gt_data, pred_data = evaluate_sroie_dataset_langchain(DATASET_PATH, openai_api_key, FIELDS_TO_EVALUATE)
+    gt_data, pred_data = evaluate_sroie_dataset_langchain(DATASET_PATH, google_api_key, FIELDS_TO_EVALUATE)
     if not gt_data or not pred_data:
         print("No data processed for evaluation. Check dataset path and file existence.")
     else:
