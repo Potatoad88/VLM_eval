@@ -3,6 +3,7 @@ venv/
 
 # Ignore environment variable files
 .env
+dylan-service-acc.json
 
 # Ignore SROIE2019 dataset files
 SROIE2019/
