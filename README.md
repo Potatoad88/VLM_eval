@@ -4,24 +4,18 @@ This project provides scripts and tools to evaluate Vision-Language Models (VLMs
 
 ## Features
 - **Robust normalization** for dates (including ambiguous formats and month names), currency, and text fields
-- **Fuzzy matching** for address and company fields
+- **Fuzzy matching** for address and company fields (90% similarity threshold)
 - **Detailed mismatch reporting** for debugging and model improvement
-- **Batch and range-based evaluation**
+- **Multiple provider support**: OpenAI, Google Generative AI, and Vertex AI
+- **Jupyter notebook interface** for interactive evaluation
 - **Secure environment management** using `.env` and `.gitignore`
 
 ## Getting Started
 
-
 ### Prerequisites
 - Python 3.10+
-- [OpenAI Python SDK](https://github.com/openai/openai-python)
-- [python-dotenv](https://pypi.org/project/python-dotenv/)
-- [LangChain](https://python.langchain.com/)
-- [langchain-openai](https://pypi.org/project/langchain-openai/)
-- [langchain-google-genai](https://pypi.org/project/langchain-google-genai/) (for Gemini)
-- [langchain-google-vertexai](https://pypi.org/project/langchain-google-vertexai/) (for Vertex AI Gemini)
-- An API key for your chosen provider (see below)
-
+- A virtual environment (recommended)
+- An API key/credentials for your chosen provider (see Usage section)
 
 ### Installation
 1. Clone this repository:
@@ -32,69 +26,106 @@ This project provides scripts and tools to evaluate Vision-Language Models (VLMs
 2. Create and activate a virtual environment:
    ```sh
    python -m venv venv
-   .\venv\Scripts\activate  # On Windows
+   .\venv\Scripts\Activate  # On Windows PowerShell
    # Or
    source venv/bin/activate  # On Linux/Mac
    ```
 3. Install dependencies:
    ```sh
    pip install -r requirements.txt
-   # Or install manually:
-   pip install openai python-dotenv langchain langchain-openai langchain-google-genai langchain-google-vertexai pydantic
    ```
+   
+   **Required packages:**
+   - `python-dotenv`
+   - `langchain`
+   - `langchain-openai`
+   - `langchain-google-genai` (for Gemini)
+   - `langchain-google-vertexai` (for Vertex AI)
+   - `pydantic`
+
 4. Download the SROIE2019 dataset (see Acknowledgments below) and place it in the correct folder structure as shown in this repo.
 
-
 ### Usage
-1. Edit `.env` to include your API credentials for the provider you want to use:
-   - **OpenAI**:
-     ```
-     OPENAI_API_KEY=sk-...
-     ```
-   - **Gemini (Google Generative AI)**:
-     ```
-     GOOGLE_API_KEY=your-google-api-key
-     ```
-   - **Vertex AI Gemini**:
-     ```
-     GOOGLE_APPLICATION_CREDENTIALS=path/to/your/service-account.json
-     # (Service account must have Vertex AI User permissions)
-     ```
-2. Run the evaluation script:
+1. Create a `.env` file in the project root and add your API credentials:
+   
+   **For OpenAI:**
+   ```
+   OPENAI_API_KEY=sk-...
+   ```
+   
+   **For Gemini (Google Generative AI):**
+   ```
+   GOOGLE_API_KEY=your-google-api-key
+   ```
+   
+   **For Vertex AI Gemini:**
+   ```
+   GOOGLE_APPLICATION_CREDENTIALS=path/to/your/service-account.json
+   ```
+   *Note: Service account must have Vertex AI User permissions*
+
+2. **Choose your evaluation method:**
+   
+   **Option A: Python Script**
    ```sh
    python evaluation_scripts/calculate_f1.py
    ```
-3. To test a specific file range or debug mismatches, edit the main block in `calculate_f1.py` as described in the comments.
+   
+   **Option B: Jupyter Notebook**
+   ```sh
+   jupyter notebook evaluation_scripts/calculate_f1_notebook.ipynb
+   ```
 
-**Note:**
-- For Vertex AI, your service account JSON file must exist at the path specified in `.env` and have the correct permissions.
-- The script will automatically use the correct credentials based on your `.env` and the model/provider you select in the code.
+3. **Configure the model:**
+   - Edit the model configuration in the script/notebook
+   - Uncomment the desired model provider (OpenAI/Gemini/Vertex AI)
+   - Update model names as needed
+
+### Supported Models
+- **OpenAI**: `gpt-4o`, `gpt-4o-mini`, `gpt-4-vision-preview`
+- **Google Generative AI**: `gemini-1.5-pro-latest`, `gemini-pro-vision`
+- **Vertex AI**: `gemini-1.5-pro`, `gemini-1.0-pro-vision`, etc.
 
 ## Folder Structure
 ```
-evaluation_scripts/
-    calculate_f1.py
-SROIE2019/
-    layoutlm-base-uncased/
-    test/
-        box/
-        entities/
-        img/
-    train/
-        box/
-        entities/
-        img/
-results/
-    4o.txt
-    gemini-2.0-flash-001.txt
-    gemini-2.5-flash.txt
+VLM_evaluation/
+├── evaluation_scripts/
+│   ├── calculate_f1.py
+│   └── calculate_f1_notebook.ipynb
+├── SROIE2019/
+│   └── test/
+│       ├── box/
+│       ├── entities/
+│       └── img/
+├── results/
+│   ├── 4o.txt
+│   ├── gemini-2.0-flash-001.txt
+│   └── gemini-2.5-flash.txt
+├── .env
+├── .gitignore
+├── requirements.txt
+└── README.md
 ```
 
+## Evaluation Metrics
+- **Precision**: TP / (TP + FP)
+- **Recall**: TP / (TP + FN)
+- **F1 Score**: 2 × (Precision × Recall) / (Precision + Recall)
+- **Per-field analysis** for each entity type
+- **Fuzzy matching** for supplier name and address (90% similarity threshold)
+- **Exact matching** for dates and amounts
+
+## Troubleshooting
+- **Authentication errors**: Ensure your `.env` file contains the correct API keys/credentials
+- **Import errors**: Activate your virtual environment and install all requirements
+- **Dataset path issues**: Verify the SROIE2019 dataset structure matches the expected format
+- **Vertex AI permissions**: Ensure your service account has proper Vertex AI access
 
 ## Acknowledgments
-- **SROIE2019 Dataset**: This project uses the SROIE2019 dataset, which was obtained from [Kaggle](https://www.kaggle.com/datasets/urbikn/sroie-datasetv2). Please cite the original dataset and respect its license and terms of use.
-- **OpenAI**: For providing the GPT-4o and GPT-4o-mini models and API.
-- **Google**: For providing Gemini and Vertex AI Gemini models and APIs.
+- **SROIE2019 Dataset**: This project uses the SROIE2019 dataset, obtained from [Kaggle](https://www.kaggle.com/datasets/urbikn/sroie-datasetv2). Please cite the original dataset and respect its license and terms of use.
+- **OpenAI**: For providing GPT-4o and vision models
+- **Google**: For providing Gemini and Vertex AI models
+- **LangChain**: For the unified interface to multiple LLM providers
 
 ## License
 This project is for research and educational purposes. Please check the licenses of the SROIE2019 dataset and any third-party models or APIs you use.
